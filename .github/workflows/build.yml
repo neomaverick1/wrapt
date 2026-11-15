@@ -1,0 +1,144 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  android:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: npm ci
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --no-install
+      - name: Build the APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+      - run: cp android/app/build/outputs/apk/release/app-release.apk Juniper.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: Juniper.apk
+
+  ios-simulator:
+    needs: checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate the iOS project
+        run: npx expo prebuild --platform ios
+      - name: Build for the iOS Simulator
+        run: |
+          WS=$(ls -d ios/*.xcworkspace | head -1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO | tail -n 60
+          APP=$(ls -d build/Build/Products/Release-iphonesimulator/*.app | head -1)
+          ditto -c -k --keepParent "$APP" Juniper-iOS-Simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator
+          path: Juniper-iOS-Simulator.zip
+
+  web:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the web version
+        run: npx expo export --platform web
+        env:
+          EXPO_BASE_URL: /${{ github.event.repository.name }}
+      - name: Add the Juniper & Co. website next to the app
+        run: cp -r site dist/site
+      - name: Single-page fallback for direct links
+        run: cp dist/index.html dist/404.html && touch dist/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy-web:
+    needs: web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: [android, ios-simulator]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Wrapt 1.0.${{ github.run_number }}
+          make_latest: true
+          files: |
+            Juniper.apk
+            Juniper-iOS-Simulator.zip
+          body: |
+            Wrapt turns the Juniper & Co. website into a native app. The app installs as **Juniper**.
+
+            **Android:** download `Juniper.apk` on an Android phone and open it to install (allow installs from this source when asked).
+
+            **Web preview (any browser):** https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+            **The website on its own:** https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/site/
+
+            **iOS Simulator (Mac):** unzip `Juniper-iOS-Simulator.zip` and drag `Juniper.app` onto a running simulator.
+
+            Try it: add a plant to the cart (the tab badge updates), tap **Notify me** on the sold-out bonsai (a notification arrives a few seconds later), open **Account** (fingerprint or Face ID lock), and turn on airplane mode (offline screen).

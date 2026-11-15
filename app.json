@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Juniper",
+    "slug": "wrapt",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F7F3EC",
+    "scheme": "wrapt",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.neomaverick.wrapt",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Juniper uses the camera so you can send a photo of your plant to our growers.",
+        "NSPhotoLibraryUsageDescription": "Juniper lets you pick a plant photo to send to our growers.",
+        "NSFaceIDUsageDescription": "Juniper uses Face ID to keep your account private."
+      }
+    },
+    "android": {
+      "package": "com.neomaverick.wrapt",
+      "adaptiveIcon": {
+        "backgroundColor": "#1F3A2E",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.VIBRATE"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "single",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#1F3A2E" }],
+      ["expo-local-authentication", { "faceIDPermission": "Juniper uses Face ID to keep your account private." }]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
