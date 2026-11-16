@@ -43,16 +43,26 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
+      - name: Version code from the build number (Google Play needs it to go up)
+        run: node -e "const f='app.json',j=require('./'+f);j.expo.android={...j.expo.android,versionCode:${{ github.run_number }}};require('fs').writeFileSync(f,JSON.stringify(j,null,2))"
       - name: Generate the Android project
         run: npx expo prebuild --platform android --no-install
-      - name: Build the APK
+      - name: Build the APK and the Google Play bundle
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
-      - run: cp android/app/build/outputs/apk/release/app-release.apk Juniper.apk
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+      - name: Sign them
+        env:
+          UPLOAD_JKS_B64: ${{ secrets.UPLOAD_JKS_B64 }}
+          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+        run: bash .github/sign-android.sh android/app/build/outputs/apk/release/app-release.apk Juniper.apk android/app/build/outputs/bundle/release/app-release.aab Juniper-Play.aab
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: Juniper.apk
+          path: |
+            Juniper.apk
+            Juniper-Play.aab
 
   ios-simulator:
     needs: checks
@@ -84,7 +94,7 @@ jobs:
           path: Juniper-iOS-Simulator.zip
 
   web:
-    needs: checks
+    needs: [checks, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +111,12 @@ jobs:
         run: cp -r site dist/site
       - name: Single-page fallback for direct links
         run: cp dist/index.html dist/404.html && touch dist/.nojekyll
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: app-download
+      - name: Put the APK and the Get the app button on the site
+        run: node .github/add-download.mjs dist app-download/Juniper.apk "Juniper" assets/icon.png /${{ github.event.repository.name }}/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
@@ -129,11 +145,14 @@ jobs:
           make_latest: true
           files: |
             Juniper.apk
+            Juniper-Play.aab
             Juniper-iOS-Simulator.zip
           body: |
             Wrapt turns the Juniper & Co. website into a native app. The app installs as **Juniper**.
 
-            **Android:** download `Juniper.apk` on an Android phone and open it to install (allow installs from this source when asked).
+            **Android:** download `Juniper.apk` on an Android phone and open it to install (allow installs from this source when asked). Also on the website's **Android app** button.
+
+            **Google Play:** `Juniper-Play.aab` is the bundle for the Play Console.
 
             **Web preview (any browser):** https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
